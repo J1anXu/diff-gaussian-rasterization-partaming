@@ -14,8 +14,9 @@
 #include <cstdio>
 #include <tuple>
 #include <string>
-	
-std::tuple<int, int, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+// 增加两个返回值，19个变21个，两个返回值分别是alphaLeft和invDepth
+// 入参不用修改	
+std::tuple<int, int, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 RasterizeGaussiansCUDA(
 	const torch::Tensor& background,
 	const torch::Tensor& means3D,
@@ -38,7 +39,7 @@ RasterizeGaussiansCUDA(
 	const bool prefiltered,
 	const bool debug,
 	const torch::Tensor& pixel_weights);
-
+// 增加 入参 dL_dout_invdepth 和 colors_bg
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
  RasterizeGaussiansBackwardCUDA(
  	const torch::Tensor& background,
@@ -56,6 +57,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
     const torch::Tensor& dL_dout_color,
 	const torch::Tensor& dc,
 	const torch::Tensor& sh,
+	const torch::Tensor& dL_dout_invdepth, // PART
 	const int degree,
 	const torch::Tensor& campos,
 	const torch::Tensor& geomBuffer,
@@ -64,6 +66,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	const torch::Tensor& imageBuffer,
 	const int B,
 	const torch::Tensor& sampleBuffer,
+	const torch::Tensor& colors_bg, // PART
 	const bool debug);
 		
 torch::Tensor markVisible(

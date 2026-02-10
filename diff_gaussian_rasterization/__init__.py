@@ -13,7 +13,12 @@ from typing import NamedTuple
 import torch.nn as nn
 import torch
 from . import _C
+_global_colors_bg = None
 
+def set_colors_bg(colors_bg):
+    global _global_colors_bg
+    _global_colors_bg = colors_bg
+    
 def cpu_deep_copy_tuple(input_tuple):
     copied_tensors = [item.cpu().clone() if isinstance(item, torch.Tensor) else item for item in input_tuple]
     return tuple(copied_tensors)
@@ -92,29 +97,30 @@ class _RasterizeGaussians(torch.autograd.Function):
         if raster_settings.debug:
             cpu_args = cpu_deep_copy_tuple(args) # Copy them before they can be corrupted
             try:
-                num_rendered, num_buckets, color, radii, geomBuffer, binningBuffer, imgBuffer = _C.rasterize_gaussians(*args)
+                num_rendered, num_buckets, color, radii, geomBuffer, binningBuffer, imgBuffer, alphaLeft, invDepth = _C.rasterize_gaussians(*args)
             except Exception as ex:
                 torch.save(cpu_args, "snapshot_fw.dump")
                 print("\nAn error occured in forward. Please forward snapshot_fw.dump for debugging.")
                 raise ex
-        else:
-            num_rendered, num_buckets, color, radii, geomBuffer, binningBuffer, imgBuffer, sampleBuffer, countBuffer, listBuffer, listBufferRender, listBufferDistance, centers, depths, my_radii, accum_weights, accum_count, accum_blend, accum_dist = _C.rasterize_gaussians(*args)
+        else: # PART: 新增 , alphaLeft, invDepth 返回值放在最后
+            num_rendered, num_buckets, color, radii, geomBuffer, binningBuffer, imgBuffer, sampleBuffer, countBuffer, listBuffer, listBufferRender, listBufferDistance, centers, depths, my_radii, accum_weights, accum_count, accum_blend, accum_dist, alphaLeft, invDepth  = _C.rasterize_gaussians(*args)
 
         # Keep relevant tensors for backward
         ctx.raster_settings = raster_settings
         ctx.num_rendered = num_rendered
         ctx.num_buckets = num_buckets
         ctx.save_for_backward(colors_precomp, means3D, scales, rotations, cov3Ds_precomp, radii, dc, sh, geomBuffer, binningBuffer, imgBuffer, sampleBuffer)
-        return color, radii, countBuffer, listBuffer, listBufferRender, listBufferDistance, centers, depths, my_radii, accum_weights, accum_count, accum_blend, accum_dist
+        return color, radii, countBuffer, listBuffer, listBufferRender, listBufferDistance, centers, depths, my_radii, accum_weights, accum_count, accum_blend, accum_dist, alphaLeft, invDepth 
 
-    @staticmethod
-    def backward(ctx, grad_out_color, _, dumy, wumy, pumy, fumy, g_center, g_depth, g_radii, g_weights, g_count, g_blend, g_dist):
+    @staticmethod # PART: 新增 alphaLeft, invDepth 参数
+    def backward(ctx, grad_out_color, _, dumy, wumy, pumy, fumy, g_center, g_depth, g_radii, g_weights, g_count, g_blend, g_dist, g_alphaLeft, g_invDepth):
 
         # Restore necessary values from context
         num_rendered = ctx.num_rendered
         num_buckets = ctx.num_buckets
         raster_settings = ctx.raster_settings
         colors_precomp, means3D, scales, rotations, cov3Ds_precomp, radii, dc, sh, geomBuffer, binningBuffer, imgBuffer, sampleBuffer = ctx.saved_tensors
+        colors_bg = _global_colors_bg
 
         # Restructure args as C++ method expects them
         args = (raster_settings.bg,
@@ -140,6 +146,7 @@ class _RasterizeGaussians(torch.autograd.Function):
                 imgBuffer,
                 num_buckets,
                 sampleBuffer,
+                colors_bg, 
                 raster_settings.debug)
 
         # Compute gradients for relevant tensors by invoking backward method
@@ -153,7 +160,7 @@ class _RasterizeGaussians(torch.autograd.Function):
                 raise ex
         else:
              grad_means2D, grad_colors_precomp, grad_opacities, grad_means3D, grad_cov3Ds_precomp, grad_dc, grad_sh, grad_scales, grad_rotations = _C.rasterize_gaussians_backward(*args)
-
+        # backward 的返回值个数必须与 forward 的输入参数个数一一对应
         grads = (
             grad_means3D,
             grad_means2D,
