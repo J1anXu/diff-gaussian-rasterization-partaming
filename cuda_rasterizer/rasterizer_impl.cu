@@ -189,10 +189,10 @@ __global__ void duplicateWithKeys(
 	}
 }
 
-// Check keys to see if it is at the start/end of one tile's range in 
-// the full sorted list. If yes, write start/end of this tile. 
+// Check keys to see if it is at the start/end of one tile's range in
+// the full sorted list. If yes, write start/end of this tile.
 // Run once per instanced (duplicated) Gaussian ID.
-__global__ void identifyTileRanges(int L, uint64_t* point_list_keys, uint2* ranges)
+__global__ void identifyTileRanges(int L, uint64_t* point_list_keys, uint2* ranges, int num_tiles)
 {
 	auto idx = cg::this_grid().thread_rank();
 	if (idx >= L)
@@ -201,18 +201,20 @@ __global__ void identifyTileRanges(int L, uint64_t* point_list_keys, uint2* rang
 	// Read tile ID from key. Update start/end of tile range if at limit.
 	uint64_t key = point_list_keys[idx];
 	uint32_t currtile = key >> 32;
-	bool valid_tile = currtile != (uint32_t) -1;
+	bool valid_tile = currtile != (uint32_t) -1 && currtile < num_tiles;
 
-	if (idx == 0)
+	if (idx == 0 && valid_tile)
 		ranges[currtile].x = 0;
 	else
 	{
 		uint32_t prevtile = point_list_keys[idx - 1] >> 32;
+		bool valid_prev = prevtile != (uint32_t) -1 && prevtile < num_tiles;
 		if (currtile != prevtile)
 		{
-			ranges[prevtile].y = idx;
-			if (valid_tile) 
-			ranges[currtile].x = idx;
+			if (valid_prev)
+				ranges[prevtile].y = idx;
+			if (valid_tile)
+				ranges[currtile].x = idx;
 		}
 	}
 	if (idx == L - 1 && valid_tile)
@@ -371,11 +373,18 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 	float* blend_weights,
 	float* dist_accum)
 {
+	// DEBUG: 打印入口参数
+	printf("[CUDA FORWARD] P=%d, D=%d, M=%d, width=%d, height=%d\\n", P, D, M, width, height);
+
 	const float focal_y = height / (2.0f * tan_fovy);
 	const float focal_x = width / (2.0f * tan_fovx);
 
 	size_t chunk_size = required<GeometryState>(P);
 	char* chunkptr = geometryBuffer(chunk_size);
+
+	// 初始化 geometry buffer 为 0，防止垃圾值
+	CHECK_CUDA(cudaMemset(chunkptr, 0, chunk_size), debug);
+
 	GeometryState geomState = GeometryState::fromChunk(chunkptr, P);
 
 	if (radii == nullptr)
@@ -389,6 +398,10 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 	// Dynamically resize image-based auxiliary buffers during training
 	size_t img_chunk_size = required<ImageState>(width * height);
 	char* img_chunkptr = imageBuffer(img_chunk_size);
+
+	// 初始化 image buffer 为 0，防止垃圾值
+	CHECK_CUDA(cudaMemset(img_chunkptr, 0, img_chunk_size), debug);
+
 	ImageState imgState = ImageState::fromChunk(img_chunkptr, width * height);
 
 	if (NUM_CHAFFELS != 3 && colors_precomp == nullptr)
@@ -426,6 +439,8 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 		prefiltered
 	), debug)
 
+	printf("[CUDA FORWARD] preprocess done\\n");
+
 	// Compute prefix sum over full list of touched tile counts by Gaussians
 	// E.g., [2, 3, 0, 2, 1] -> [2, 5, 5, 7, 8]
 	CHECK_CUDA(cub::DeviceScan::InclusiveSum(geomState.scanning_space, geomState.scan_size, geomState.tiles_touched, geomState.point_offsets, P), debug)
@@ -434,11 +449,19 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 	int num_rendered;
 	CHECK_CUDA(cudaMemcpy(&num_rendered, geomState.point_offsets + P - 1, sizeof(int), cudaMemcpyDeviceToHost), debug);
 
+	printf("[CUDA FORWARD] num_rendered=%d\\n", num_rendered);
+
 	size_t binning_chunk_size = required<BinningState>(num_rendered);
 	char* binning_chunkptr = binningBuffer(binning_chunk_size);
+
+	// 初始化 binning buffer 为 0，防止垃圾值
+	CHECK_CUDA(cudaMemset(binning_chunkptr, 0, binning_chunk_size), debug);
+
 	BinningState binningState = BinningState::fromChunk(binning_chunkptr, num_rendered);
 
-	// For each instance to be rendered, produce adequate [ tile | depth ] key 
+	printf("[CUDA FORWARD] binning state created\\n");
+
+	// For each instance to be rendered, produce adequate [ tile | depth ] key
 	// and corresponding dublicated Gaussian indices to be sorted
 	duplicateWithKeys << <(P + 255) / 256, 256 >> > (
 		P,
@@ -453,6 +476,8 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 		nullptr)
 	CHECK_CUDA(, debug)
 
+	printf("[CUDA FORWARD] duplicateWithKeys done\\n");
+
 	int bit = getHigherMsb(tile_grid.x * tile_grid.y);
 
 	// Sort complete list of (duplicated) Gaussian indices by keys
@@ -463,26 +488,53 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 		binningState.point_list_unsorted, binningState.point_list,
 		num_rendered, 0, 32 + bit), debug)
 
+	printf("[CUDA FORWARD] sort done\\n");
+
 	CHECK_CUDA(cudaMemset(imgState.ranges, 0, tile_grid.x * tile_grid.y * sizeof(uint2)), debug);
+
+	int num_tiles = tile_grid.x * tile_grid.y;
 
 	// Identify start and end of per-tile workloads in sorted list
 	if (num_rendered > 0)
 		identifyTileRanges << <(num_rendered + 255) / 256, 256 >> > (
 			num_rendered,
 			binningState.point_list_keys,
-			imgState.ranges);
+			imgState.ranges,
+			num_tiles);
 	CHECK_CUDA(, debug)
 
+	// DEBUG: 同步并检查 ranges
+	CHECK_CUDA(cudaDeviceSynchronize(), debug);
+
+	// DEBUG: 读取第一个 tile 的 range 来检查
+	uint2 first_range;
+	CHECK_CUDA(cudaMemcpy(&first_range, imgState.ranges, sizeof(uint2), cudaMemcpyDeviceToHost), debug);
+	printf("[CUDA FORWARD] identifyTileRanges done, first_range=(%u, %u)\\n", first_range.x, first_range.y);
+
  	// bucket count
-	int num_tiles = tile_grid.x * tile_grid.y;
+
+	// 初始化 bucket_count 和 bucket_offsets 为 0，防止垃圾值
+	CHECK_CUDA(cudaMemset(imgState.bucket_count, 0, num_tiles * sizeof(uint32_t)), debug);
+	CHECK_CUDA(cudaMemset(imgState.bucket_offsets, 0, num_tiles * sizeof(uint32_t)), debug);
+
 	perTileBucketCount<<<(num_tiles + 255) / 256, 256>>>(num_tiles, imgState.ranges, imgState.bucket_count);
+	CHECK_CUDA(, debug);
+
+	// DEBUG: 同步并检查 bucket_count kernel 是否成功
+	CHECK_CUDA(cudaDeviceSynchronize(), debug);
+
 	CHECK_CUDA(cub::DeviceScan::InclusiveSum(imgState.bucket_count_scanning_space, imgState.bucket_count_scan_size, imgState.bucket_count, imgState.bucket_offsets, num_tiles), debug)
 	unsigned int bucket_sum;
 	CHECK_CUDA(cudaMemcpy(&bucket_sum, imgState.bucket_offsets + num_tiles - 1, sizeof(unsigned int), cudaMemcpyDeviceToHost), debug);
+
+	printf("[CUDA FORWARD] bucket_sum=%u\\n", bucket_sum);
+
 	// create a state to store. size is number is the total number of buckets * block_size
 	size_t sample_chunk_size = required<SampleState>(bucket_sum);
 	char* sample_chunkptr = sampleBuffer(sample_chunk_size);
 	SampleState sampleState = SampleState::fromChunk(sample_chunkptr, bucket_sum);
+
+	printf("[CUDA FORWARD] sample state created, about to call render\\n");
 
 	// Let each tile blend its range of Gaussians independently in parallel
 	const float* feature_ptr = colors_precomp != nullptr ? colors_precomp : geomState.rgb;
