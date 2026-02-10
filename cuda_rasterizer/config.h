@@ -13,6 +13,7 @@
 #define CUDA_RASTERIZER_CONFIG_H_INCLUDED
 
 #define NUM_CHAFFELS 3 // Default 3, RGB
+#define NUM_CHANNELS_3DGS 3 // PART: Number of channels for 3DGS output
 #define BLOCK_X 16
 #define BLOCK_Y 16
 

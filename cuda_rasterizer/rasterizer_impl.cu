@@ -276,6 +276,7 @@ CudaRasterizer::ImageState CudaRasterizer::ImageState::fromChunk(char*& chunk, s
 
 	obtain(chunk, img.max_contrib, N, 128);
 	obtain(chunk, img.pixel_colors, N * NUM_CHAFFELS, 128);
+	obtain(chunk, img.pixel_invDepths, N, 128); // PART
 	obtain(chunk, img.bucket_count, N, 128);
 	obtain(chunk, img.bucket_offsets, N, 128);
 	cub::DeviceScan::InclusiveSum(nullptr, img.bucket_count_scan_size, img.bucket_count, img.bucket_count, N);
@@ -289,6 +290,7 @@ CudaRasterizer::SampleState CudaRasterizer::SampleState::fromChunk(char *& chunk
 	obtain(chunk, sample.bucket_to_tile, C * BLOCK_SIZE, 128);
 	obtain(chunk, sample.T, C * BLOCK_SIZE, 128);
 	obtain(chunk, sample.ar, NUM_CHAFFELS * C * BLOCK_SIZE, 128);
+	obtain(chunk, sample.ard, C * BLOCK_SIZE, 128); // PART: allocate for accumulated inverse depth
 	return sample;
 }
 
@@ -359,7 +361,9 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 	const float tan_fovx, float tan_fovy,
 	const bool prefiltered,
 	float* out_color,
+	float* invdepth,  // PART
 	int* radii,
+	float* alphaLeft, // PART
 	bool debug,
 	float* pixel_weights,
 	float* accum_weights,
@@ -487,7 +491,7 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 		imgState.ranges,
 		binningState.point_list,
 		imgState.bucket_offsets, sampleState.bucket_to_tile,
-		sampleState.T, sampleState.ar,
+		sampleState.T, sampleState.ar, sampleState.ard, // PART
 		width, height,
 		geomState.means2D,
 		feature_ptr,
@@ -498,6 +502,8 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 		imgState.pixel_colors,
 		background,
 		out_color,
+		geomState.depths, // PART 记得改
+		invdepth, // PART 记得改
 		contribCountBuffer,
 		contribOffsetBuffer,
 		imgState.contrib_scan,
@@ -509,6 +515,11 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 		blend_weights,
 		dist_accum), debug)
 
+	// PART：把参数拷到指定地址
+	CHECK_CUDA(cudaMemcpy(imgState.pixel_colors, out_color, sizeof(float) * width * height * NUM_CHANNELS_3DGS, cudaMemcpyDeviceToDevice), debug);
+	CHECK_CUDA(cudaMemcpy(imgState.pixel_invDepths, invdepth, sizeof(float) * width * height, cudaMemcpyDeviceToDevice), debug);
+	// 这个 alphaLeft 是外层传进来的地址
+	CHECK_CUDA(cudaMemcpy(alphaLeft, imgState.accum_alpha, width * height * sizeof(float), cudaMemcpyDeviceToDevice), debug);
 	return std::make_tuple(num_rendered, bucket_sum);
 }
 
@@ -536,16 +547,19 @@ void CudaRasterizer::Rasterizer::backward(
 	char* img_buffer,
 	char* sample_buffer,
 	const float* dL_dpix,
+	const float* dL_invdepths, // PART
 	float* dL_dmean2D,
 	float* dL_dconic,
 	float* dL_dopacity,
 	float* dL_dcolor,
+	float* dL_dinvdepth, // PART
 	float* dL_dmean3D,
 	float* dL_dcov3D,
 	float* dL_ddc,
 	float* dL_dsh,
 	float* dL_dscale,
 	float* dL_drot,
+	const float* colors_bg, // PART
 	bool debug)
 {
 	GeometryState geomState = GeometryState::fromChunk(geom_buffer, P);
@@ -578,19 +592,26 @@ void CudaRasterizer::Rasterizer::backward(
 		sampleState.bucket_to_tile,
 		sampleState.T,
 		sampleState.ar,
+		sampleState.ard, // PART
 		background,
 		geomState.means2D,
 		geomState.conic_opacity,
 		color_ptr,
+		geomState.depths, // PART
 		imgState.accum_alpha,
 		imgState.n_contrib,
 		imgState.max_contrib,
-		imgState.pixel_colors,
+		imgState.pixel_colors, 
+		imgState.pixel_invDepths, // PART
 		dL_dpix,
+		dL_invdepths, // PART
 		(float3*)dL_dmean2D,
 		(float4*)dL_dconic,
 		dL_dopacity,
-		dL_dcolor), debug)
+		dL_dcolor,
+		dL_dinvdepth, // PART
+		colors_bg // PART
+		), debug)
 
 	// Take care of the rest of preprocessing. Was the precomputed covariance
 	// given to us or a scales/rot pair? If precomputed, pass that. If not,
@@ -613,6 +634,7 @@ void CudaRasterizer::Rasterizer::backward(
 		(glm::vec3*)campos,
 		(float3*)dL_dmean2D,
 		dL_dconic,
+		dL_dinvdepth, // PART
 		(glm::vec3*)dL_dmean3D,
 		dL_dcolor,
 		dL_dcov3D,

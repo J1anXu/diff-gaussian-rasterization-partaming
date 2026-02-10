@@ -138,6 +138,7 @@ class _RasterizeGaussians(torch.autograd.Function):
                 grad_out_color, 
                 dc,
                 sh, 
+                g_invDepth, # PART 
                 raster_settings.sh_degree, 
                 raster_settings.campos,
                 geomBuffer,
@@ -146,7 +147,7 @@ class _RasterizeGaussians(torch.autograd.Function):
                 imgBuffer,
                 num_buckets,
                 sampleBuffer,
-                colors_bg, 
+                colors_bg,  # PART
                 raster_settings.debug)
 
         # Compute gradients for relevant tensors by invoking backward method
@@ -171,7 +172,7 @@ class _RasterizeGaussians(torch.autograd.Function):
             grad_scales,
             grad_rotations,
             grad_cov3Ds_precomp,
-            None,
+            None
         )
 
         return grads

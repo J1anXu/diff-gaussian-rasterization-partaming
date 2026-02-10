@@ -15,7 +15,7 @@
 #include <vector>
 #include <functional>
 
-namespace CudaRasterizer
+namespace CudaRasterizer // CudaRasterizer::Rasterizer::xxx的接口定义
 {
 	class Rasterizer
 	{
@@ -58,7 +58,9 @@ namespace CudaRasterizer
 			const float tan_fovx, float tan_fovy,
 			const bool prefiltered,
 			float* out_color,
+			float* invDepth, // PART 注意跟 rasterize_points中对齐，rasterize_points中叫out_invdepth
 			int* radii = nullptr,
+			float* alphaLeft = nullptr, // PART
 			bool debug = false,
 			float* pixel_weights = nullptr,
 			float* accum_weights = nullptr,
@@ -88,16 +90,19 @@ namespace CudaRasterizer
 			char* image_buffer,
 			char* sample_buffer,
 			const float* dL_dpix,
+			const float* dL_invdepths, // PART
 			float* dL_dmean2D,
 			float* dL_dconic,
 			float* dL_dopacity,
 			float* dL_dcolor,
+			float* dL_dinvdepth, // PART
 			float* dL_dmean3D,
 			float* dL_dcov3D,
 			float* dL_ddc,
 			float* dL_dsh,
 			float* dL_dscale,
 			float* dL_drot,
+			const float* colors_bg, // PART
 			bool debug);
 	};
 };

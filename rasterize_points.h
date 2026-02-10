@@ -66,7 +66,7 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Te
 	const torch::Tensor& imageBuffer,
 	const int B,
 	const torch::Tensor& sampleBuffer,
-	const torch::Tensor& colors_bg, // PART
+	const torch::Tensor& colors_bg, // PART 注意
 	const bool debug);
 		
 torch::Tensor markVisible(

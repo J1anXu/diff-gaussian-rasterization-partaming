@@ -21,26 +21,35 @@
 namespace BACKWARD
 {
 	void render(
-		const dim3 grid, dim3 block,
+		const dim3 grid, 
+		dim3 block,
 		const uint2* ranges,
 		const uint32_t* point_list,
 		int W, int H, int R, int B,
 		const uint32_t* per_bucket_tile_offset,
 		const uint32_t* bucket_to_tile,
-		const float* sampled_T, const float* sampled_ar,
+		const float* sampled_T, 
+		const float* sampled_ar, 
+		const float* sampled_ard, // PART
 		const float* bg_color,
 		const float2* means2D,
-		const float4* conic_opacity,
+		const float4* conic_opacity, 
 		const float* colors,
+		const float* depths, // PART
 		const float* final_Ts,
 		const uint32_t* n_contrib,
 		const uint32_t* max_contrib,
 		const float* pixel_colors,
+		const float* pixel_indepths, // PART
 		const float* dL_dpixels,
+		const float* dL_invdepths, // PART
 		float3* dL_dmean2D,
 		float4* dL_dconic2D,
 		float* dL_dopacity,
-		float* dL_dcolors);
+		float* dL_dcolors,
+		float* dL_dinvdepths, // PART
+		const float* colors_bg // PART
+		); 
 
 	void preprocess(
 		int P, int D, int M,
@@ -60,6 +69,7 @@ namespace BACKWARD
 		const glm::vec3* campos,
 		const float3* dL_dmean2D,
 		const float* dL_dconics,
+		const float* dL_dinvdepth, // PART
 		glm::vec3* dL_dmeans,
 		float* dL_dcolor,
 		float* dL_dcov3D,

@@ -58,7 +58,7 @@ namespace FORWARD
 		const uint2* ranges,
 		const uint32_t* point_list,
 		const uint32_t* per_tile_bucket_offset, uint32_t* bucket_to_tile,
-		float* sampled_T, float* sampled_ar,
+		float* sampled_T, float* sampled_ar, float* sampled_ard, // PART
 		int W, int H,
 		const float2* points_xy_image,
 		const float* features,
@@ -69,6 +69,8 @@ namespace FORWARD
 		float* pixel_colors,
 		const float* bg_color,
 		float* out_color,
+		float* depths, // PART
+		float* depth, // PART
 		int* img_contribs,
 		int* img_contrib_offsets,
 		char* img_contrib_scan,
