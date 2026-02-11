@@ -322,9 +322,9 @@ renderCUDA(
 	uint32_t bbm = tile_id == 0 ? 0 : per_tile_bucket_offset[tile_id - 1];
 
 	// DEBUG: 只在第一个线程打印一次
-	if (block.thread_rank() == 0 && tile_id == 0) {
-		printf("[CUDA DEBUG] render kernel started: W=%d, H=%d, toDo=%d, bbm=%u\\n", W, H, toDo, bbm);
-	}
+	// if (block.thread_rank() == 0 && tile_id == 0) {
+	// 	printf("[CUDA DEBUG] render kernel started: W=%d, H=%d, toDo=%d, bbm=%u\\n", W, H, toDo, bbm);
+	// }
 
 	// let's first quickly also write the bucket-to-tile mapping
 	int num_buckets = (toDo + 31) / 32;
