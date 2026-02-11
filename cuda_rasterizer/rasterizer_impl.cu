@@ -374,7 +374,7 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 	float* dist_accum)
 {
 	// DEBUG: 打印入口参数
-	printf("[CUDA FORWARD] P=%d, D=%d, M=%d, width=%d, height=%d\\n", P, D, M, width, height);
+	// printf("[CUDA FORWARD] P=%d, D=%d, M=%d, width=%d, height=%d\\n", P, D, M, width, height);
 
 	const float focal_y = height / (2.0f * tan_fovy);
 	const float focal_x = width / (2.0f * tan_fovx);
@@ -439,7 +439,7 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 		prefiltered
 	), debug)
 
-	printf("[CUDA FORWARD] preprocess done\\n");
+	// printf("[CUDA FORWARD] preprocess done\\n");
 
 	// Compute prefix sum over full list of touched tile counts by Gaussians
 	// E.g., [2, 3, 0, 2, 1] -> [2, 5, 5, 7, 8]
@@ -449,7 +449,7 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 	int num_rendered;
 	CHECK_CUDA(cudaMemcpy(&num_rendered, geomState.point_offsets + P - 1, sizeof(int), cudaMemcpyDeviceToHost), debug);
 
-	printf("[CUDA FORWARD] num_rendered=%d\\n", num_rendered);
+	// printf("[CUDA FORWARD] num_rendered=%d\\n", num_rendered);
 
 	size_t binning_chunk_size = required<BinningState>(num_rendered);
 	char* binning_chunkptr = binningBuffer(binning_chunk_size);
@@ -459,7 +459,7 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 
 	BinningState binningState = BinningState::fromChunk(binning_chunkptr, num_rendered);
 
-	printf("[CUDA FORWARD] binning state created\\n");
+	// printf("[CUDA FORWARD] binning state created\\n");
 
 	// For each instance to be rendered, produce adequate [ tile | depth ] key
 	// and corresponding dublicated Gaussian indices to be sorted
@@ -476,7 +476,7 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 		nullptr)
 	CHECK_CUDA(, debug)
 
-	printf("[CUDA FORWARD] duplicateWithKeys done\\n");
+	// printf("[CUDA FORWARD] duplicateWithKeys done\\n");
 
 	int bit = getHigherMsb(tile_grid.x * tile_grid.y);
 
@@ -488,7 +488,7 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 		binningState.point_list_unsorted, binningState.point_list,
 		num_rendered, 0, 32 + bit), debug)
 
-	printf("[CUDA FORWARD] sort done\\n");
+	// printf("[CUDA FORWARD] sort done\\n");
 
 	CHECK_CUDA(cudaMemset(imgState.ranges, 0, tile_grid.x * tile_grid.y * sizeof(uint2)), debug);
 
@@ -509,7 +509,7 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 	// DEBUG: 读取第一个 tile 的 range 来检查
 	uint2 first_range;
 	CHECK_CUDA(cudaMemcpy(&first_range, imgState.ranges, sizeof(uint2), cudaMemcpyDeviceToHost), debug);
-	printf("[CUDA FORWARD] identifyTileRanges done, first_range=(%u, %u)\\n", first_range.x, first_range.y);
+	// printf("[CUDA FORWARD] identifyTileRanges done, first_range=(%u, %u)\\n", first_range.x, first_range.y);
 
  	// bucket count
 
@@ -527,14 +527,14 @@ std::tuple<int,int> CudaRasterizer::Rasterizer::forward(
 	unsigned int bucket_sum;
 	CHECK_CUDA(cudaMemcpy(&bucket_sum, imgState.bucket_offsets + num_tiles - 1, sizeof(unsigned int), cudaMemcpyDeviceToHost), debug);
 
-	printf("[CUDA FORWARD] bucket_sum=%u\\n", bucket_sum);
+	// printf("[CUDA FORWARD] bucket_sum=%u\\n", bucket_sum);
 
 	// create a state to store. size is number is the total number of buckets * block_size
 	size_t sample_chunk_size = required<SampleState>(bucket_sum);
 	char* sample_chunkptr = sampleBuffer(sample_chunk_size);
 	SampleState sampleState = SampleState::fromChunk(sample_chunkptr, bucket_sum);
 
-	printf("[CUDA FORWARD] sample state created, about to call render\\n");
+	// printf("[CUDA FORWARD] sample state created, about to call render\\n");
 
 	// Let each tile blend its range of Gaussians independently in parallel
 	const float* feature_ptr = colors_precomp != nullptr ? colors_precomp : geomState.rgb;
