@@ -902,15 +902,15 @@ void BACKWARD::render(
 	const int THREADS = 32;
 	int grid_dim = ((B*32) + THREADS - 1) / THREADS;
 
-	// DEBUG: Print kernel launch parameters
-	printf("[CUDA BACKWARD] W=%d, H=%d, R=%d, B=%d, grid_dim=%d, threads=%d\n",
-	       W, H, R, B, grid_dim, THREADS);
+	// // DEBUG: Print kernel launch parameters
+	// printf("[CUDA BACKWARD] W=%d, H=%d, R=%d, B=%d, grid_dim=%d, threads=%d\n",
+	//        W, H, R, B, grid_dim, THREADS);
 
 	// Skip kernel launch if B=0 (no buckets to process)
 	// This happens when all gaussians in this block are culled (not visible)
 	// In this case, gradients should remain 0 (already initialized by PyTorch)
 	if (B == 0 || grid_dim == 0) {
-		printf("[CUDA BACKWARD] Skipping kernel launch due to B=0 or grid_dim=0 (all gaussians culled)\n");
+		// printf("[CUDA BACKWARD] Skipping kernel launch due to B=0 or grid_dim=0 (all gaussians culled)\n");
 		return;
 	}
 
